@@ -1,0 +1,35 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r}
+sales <- read.csv(file = 'data/filtered_sales_R_project.csv')
+sales %>%
+  arrange(apn, amount, ownerdate)
+
+```
+```{r}
+sales_mean <- mean(sales$amount)
+sales_mean
+
+```
+
+
+```{r}
+aff_housing_002 <- read_csv(file= 'data/affordable_housing_002.csv')
+aff_housing_002
+
+ 
+```
+
+
+
+
+
