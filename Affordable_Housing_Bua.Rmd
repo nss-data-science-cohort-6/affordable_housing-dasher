@@ -16,6 +16,7 @@ assessments <- read_csv("assessments.csv")
 LIHTC <- read_csv("LIHTC.csv")
 property_details <- read_csv("property_details.csv")
 barnes <- read_csv("barnes.csv")
+X2021_Active_Property_List <- read_excel("2021_Active_Property_List.xlsx")
 
 #filtered_sales, assessments, property_details can join on 'apn'
 ```
@@ -25,11 +26,16 @@ barnes <- read_csv("barnes.csv")
 filtered_sales$owneryear <- format(filtered_sales$ownerdate, format = "%Y")
 filtered_sales$ownermonth <- format(filtered_sales$ownerdate, format = "%m")
 
+assessments$effective_year <- format(assessments$effectivedate, format = "%Y")
+assessments$effective_month <- format(assessments$effectivedate, format = "%m")
+
 #Check duplicated rows 
-nrow(filtered_sales[duplicated(filtered_sales),])
+nrow(filtered_sales[duplicated(filtered_sales),]) #7507
+nrow(assessments[duplicated(assessments),]) #23160
+nrow(property_details[duplicated(property_details),]) #2
 
 #General Exploratory Analysis
-length(unique(filtered_sales$apn)) #There are 38.62762% unique apn number in filtered_sales
+length(unique(filtered_sales$apn)) #38.62762% of the data set are unique apn in filtered_sales
 
 ```
 
@@ -86,7 +92,34 @@ filtered_sales %>%
 
 
 ```{r}
-# 1. Using the sf library, find the closest development to each home. Hint: You can convert a tibble to an sf object using the [`st_as_sf` function](https://r-spatial.github.io/sf/reference/st_as_sf.html). See, for example, this stackoverflow post: https://gis.stackexchange.com/questions/222978/lon-lat-to-simple-features-sfg-and-sfc-in-r. Once converted, you can use the [`get_nearest_feature` function](https://r-spatial.github.io/sf/reference/st_nearest_feature.html).
+# 1. Using the sf library, find the closest development to each home. Hint: You can convert a tibble to an sf (simple feature) object using the [`st_as_sf` function](https://r-spatial.github.io/sf/reference/st_as_sf.html). See, for example, this stackoverflow post: https://gis.stackexchange.com/questions/222978/lon-lat-to-simple-features-sfg-and-sfc-in-r. Once converted, you can use the [`get_nearest_feature` function](https://r-spatial.github.io/sf/reference/st_nearest_feature.html).
+
+library(sf)
+
+#Generate 'geometry' column in LIHTC
+LIHTC <- st_as_sf(LIHTC, coords = c("LONGITUDE", "LATITUDE"), 
+                 crs = 4326, agr = "constant")
+
+property_details <- st_as_sf(property_details, coords = "centroid", 
+                 crs = 4326, agr = "constant",na.fail = TRUE)
+
+
 ```
+```{r}
+property_details[c('Longitude', 'Latitude')] <- str_split_fixed(property_details$centroid, ',', 2)
+
+```
+
+
+```{r}
+#2. Calculate the distance from each home its closest development.
+```
+
+```{r}
+#3. Filter the homes down to those that are within one mile of an affordable housing development.
+
+```
+
+
 
 
