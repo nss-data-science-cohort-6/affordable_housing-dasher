@@ -3,17 +3,90 @@ title: "Assessing the Impact of Affordable Housing Development"
 output: html_notebook
 ---
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
-
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
 
 ```{r}
-plot(cars)
+library(readr)
+library(readxl)
+library(tidyverse)
 ```
 
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+```{r}
+filtered_sales <- read_csv("filtered_sales.csv") 
+assessments <- read_csv("assessments.csv")
+LIHTC <- read_csv("LIHTC.csv")
+property_details <- read_csv("property_details.csv")
+barnes <- read_csv("barnes.csv")
 
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+#filtered_sales, assessments, property_details can join on 'apn'
+```
 
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+```{r}
+#Data Manipulations in filtered_sales
+filtered_sales$owneryear <- format(filtered_sales$ownerdate, format = "%Y")
+filtered_sales$ownermonth <- format(filtered_sales$ownerdate, format = "%m")
+
+#Check duplicated rows 
+nrow(filtered_sales[duplicated(filtered_sales),])
+
+#General Exploratory Analysis
+length(unique(filtered_sales$apn)) #There are 38.62762% unique apn number in filtered_sales
+
+```
+
+```{r}
+#filtered_sales contains sales of single family homes from 1995 to the present day. It has been filtered to remove sales that are likely not arms-length transactions and transactions for parcels which did not have a house on them at the time of sale. This was done by removing any transations for $0, any transactions for which the adjacent appraisal values showed $0 for improvents, and any for which the transaction amount was less than half of the adjacent appraisals. 
+
+filtered_sales %>%
+  distinct() %>%
+  group_by(owneryear) %>%
+  summarize(sum_amount = sum(amount)) %>%
+  ggplot(aes(x=owneryear, y=sum_amount))+
+  geom_col()+
+  ggtitle('Total Sales by Owner Year')+
+  theme(axis.text.x = element_text(angle = 45, hjust=1))+
+  xlab('Owner Year')+
+  scale_y_continuous(name = 'Total Amount in USD (billions)', labels = unit_format(scale = 1e-9, unit = ''))
+
+filtered_sales %>%
+  distinct() %>%
+  group_by(owneryear) %>%
+  summarize(max_amount = max(amount)) %>%
+  ggplot(aes(x=owneryear, y=max_amount))+
+  geom_col(fill='red')+
+  ggtitle('Max Sales by Owner Year')+
+  theme(axis.text.x = element_text(angle = 45, hjust=1))+
+  xlab('Owner Year')+
+  scale_y_continuous(name = 'Max Sales USD (millions)', labels = unit_format(scale = 1e-6, unit = ''))
+
+filtered_sales %>%
+  distinct() %>%
+  group_by(owneryear) %>%
+  summarize(median_amount = median(amount)) %>%
+  ggplot(aes(x=owneryear, y=median_amount))+
+  geom_col(fill='blue')+
+  ggtitle('Median Sales by Owner Year')+
+  theme(axis.text.x = element_text(angle = 45, hjust=1))+
+  xlab('Owner Year')+
+  scale_y_continuous(name = 'Median Sales USD (millions)', labels = unit_format(scale = 1e-5, unit = ''))
+
+filtered_sales %>%
+  distinct() %>%
+  group_by(owneryear) %>%
+  summarize(count_apn = n_distinct(apn)) %>%
+  ggplot(aes(x=owneryear, y=count_apn))+
+  geom_col(fill='pink')+
+  ggtitle('Historical Unique Property Count by Owner Year')+
+  theme(axis.text.x = element_text(angle = 45, hjust=1))+
+  xlab('Owner Year')+
+  scale_y_continuous(name = 'Count of Unique Property (in 1000s)', labels = unit_format(scale = 1e-3, unit = ''))
+
+
+```
+
+
+
+```{r}
+# 1. Using the sf library, find the closest development to each home. Hint: You can convert a tibble to an sf object using the [`st_as_sf` function](https://r-spatial.github.io/sf/reference/st_as_sf.html). See, for example, this stackoverflow post: https://gis.stackexchange.com/questions/222978/lon-lat-to-simple-features-sfg-and-sfc-in-r. Once converted, you can use the [`get_nearest_feature` function](https://r-spatial.github.io/sf/reference/st_nearest_feature.html).
+```
+
 
