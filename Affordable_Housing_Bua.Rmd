@@ -94,22 +94,22 @@ filtered_sales %>%
 ```{r}
 # 1. Using the sf library, find the closest development to each home. Hint: You can convert a tibble to an sf (simple feature) object using the [`st_as_sf` function](https://r-spatial.github.io/sf/reference/st_as_sf.html). See, for example, this stackoverflow post: https://gis.stackexchange.com/questions/222978/lon-lat-to-simple-features-sfg-and-sfc-in-r. Once converted, you can use the [`get_nearest_feature` function](https://r-spatial.github.io/sf/reference/st_nearest_feature.html).
 
+library(stringr)
+property_details[c('Longitude', 'Latitude')] <- str_split_fixed(property_details$centroid, ',', 2)
+property_details$Longitude <- str_sub(property_details$Longitude, 2, -1)
+property_details$Latitude <- str_sub(property_details$Latitude, 1, -2)
+
 library(sf)
 
-#Generate 'geometry' column in LIHTC
+#Generate 'geometry' column in LIHTC and property_details
 LIHTC <- st_as_sf(LIHTC, coords = c("LONGITUDE", "LATITUDE"), 
                  crs = 4326, agr = "constant")
 
-property_details <- st_as_sf(property_details, coords = "centroid", 
-                 crs = 4326, agr = "constant",na.fail = TRUE)
+property_details <- st_as_sf(property_details, coords = c("Longitude", "Latitude"), 
+                 crs = 4326, agr = "constant")
 
-
+try(st_nearest_feature(LIHTC, property_details))
 ```
-```{r}
-property_details[c('Longitude', 'Latitude')] <- str_split_fixed(property_details$centroid, ',', 2)
-
-```
-
 
 ```{r}
 #2. Calculate the distance from each home its closest development.
