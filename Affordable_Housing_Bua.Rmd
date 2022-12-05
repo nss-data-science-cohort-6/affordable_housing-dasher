@@ -108,18 +108,73 @@ LIHTC <- st_as_sf(LIHTC, coords = c("LONGITUDE", "LATITUDE"),
 property_details <- st_as_sf(property_details, coords = c("Longitude", "Latitude"), 
                  crs = 4326, agr = "constant")
 
-try(st_nearest_feature(LIHTC, property_details))
+#The following code returns: for each feature (geometry) in property_details the index of the nearest feature (geometry) in set LIHTC
+try(st_nearest_feature(property_details, LIHTC))
+#Add HUD_ID column to property_details
+property_details$HUD_ID <- LIHTC$HUD_ID[st_nearest_feature(property_details, LIHTC)]
+
 ```
+
 
 ```{r}
 #2. Calculate the distance from each home its closest development.
+# test prop_distance <- st_distance(property_details[1:10,], LIHTC)
+
+#lapply outputs a list, we add do.call('c' to output a vector
+#prop_distances <- do.call('c',lapply(1:nrow(property_details),function(i){
+
+#prop_distances <- do.call('c',lapply(1:100,function(i){
+prop_distances <- do.call('c',lapply(1:nrow(property_details),function(i){
+  #i=1 for testing
+  print(paste(i,nrow(property_details),sep='/')) 
+  curr.prop <- property_details[i,]
+  curr.lihtc <- subset(LIHTC,HUD_ID==curr.prop$HUD_ID)
+  curr.dist <- st_distance(curr.prop,curr.lihtc)
+  return(as.numeric(curr.dist))
+  }))
+
+save(prop_distances,file='/Users/thidathornvanitsthian/Documents/Data Science 2022/affordable_housing-dasher/Data/prop_distances.Rdata')
+
+#load('/Users/thidathornvanitsthian/Documents/Data Science 2022/affordable_housing-dasher/Data/prop_distances.Rdata')
+
+library(maps)
+#subset of lat long around Davidson County from map_data 
+county.lines <- subset(map_data('county'),region=='tennessee' & subregion=='davidson') 
+
+#NNDist: nearest neighbor distance
+property_details$NNDist<-prop_distances
+ggplot(property_details)+
+  geom_sf(aes(colour=NNDist))+
+  geom_sf(data = LIHTC, shape=23) +
+  geom_path(data = county.lines, mapping=aes(x=long, y=lat, group=group)) +
+  scale_colour_gradientn(colours=rainbow(100)[75:1]) 
+  
+# group=group name of a column in county.lines
+# affordable housing developments (diamiond shapes) are right on the purple color
+# ?pch
+#this splits the rainbow into 100 colours, we only want 75 of the 100 rainbow colours but in reverse order [75:1]
+
+#distances are small in the center 
+
+
 ```
 
 ```{r}
 #3. Filter the homes down to those that are within one mile of an affordable housing development.
+# 1 mile = 1609 m
+property_within_1mile <- subset(property_details, NNDist<1609)
 
+#69705 observations are within a mile of the nearest affordable housing developments
 ```
 
 
+```{r}
+#4. For each remaining home, calculate a new column called "group", which is defined according to the following rules. Hint: Use the `case_when` function to do this.  
+#	* "pre" - for homes where the distance is less than half a mile and whose sale date was 2-5 years prior to the input year  
+#	* "mid" - for homes where the distance is less than half a mile and whose sale date was 0-2 years prior to the input year  
+#	* "post" - for homes where the distance is less than half a mile and whose sale date was after the input year  
+#	* "outside" - for homes where the distance is more than half a mile and whose sale date was no more than 5 years prior to the input year  
+#	* "other" - All other rows  
+```
 
 
