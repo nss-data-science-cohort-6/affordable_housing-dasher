@@ -110,6 +110,7 @@ property_details <- st_as_sf(property_details, coords = c("Longitude", "Latitude
 
 #The following code returns: for each feature (geometry) in property_details the index of the nearest feature (geometry) in set LIHTC
 try(st_nearest_feature(property_details, LIHTC))
+
 #Add HUD_ID column to property_details
 property_details$HUD_ID <- LIHTC$HUD_ID[st_nearest_feature(property_details, LIHTC)]
 
@@ -120,10 +121,13 @@ property_details$HUD_ID <- LIHTC$HUD_ID[st_nearest_feature(property_details, LIH
 #2. Calculate the distance from each home its closest development.
 # test prop_distance <- st_distance(property_details[1:10,], LIHTC)
 
-#lapply outputs a list, we add do.call('c' to output a vector
-#prop_distances <- do.call('c',lapply(1:nrow(property_details),function(i){
+#Rohit code from Slack
+nearest_development <- LIHTC[st_nearest_feature(property_details, LIHTC), ]
+property_details$NNDist <- as.numeric(st_distance(property_details, nearest_development, by_element = T))
 
-#prop_distances <- do.call('c',lapply(1:100,function(i){
+
+#lapply outputs a list, we add do.call('c' to output a vector
+
 prop_distances <- do.call('c',lapply(1:nrow(property_details),function(i){
   #i=1 for testing
   print(paste(i,nrow(property_details),sep='/')) 
@@ -142,7 +146,7 @@ library(maps)
 county.lines <- subset(map_data('county'),region=='tennessee' & subregion=='davidson') 
 
 #NNDist: nearest neighbor distance
-property_details$NNDist<-prop_distances
+
 ggplot(property_details)+
   geom_sf(aes(colour=NNDist))+
   geom_sf(data = LIHTC, shape=23) +
@@ -160,6 +164,21 @@ ggplot(property_details)+
 ```
 
 ```{r}
+#my attempt to create an interactive map on leaflet
+library(leaflet)
+library(raster)
+
+county.lines.sf <- st_as_sf(county.lines, coords = c("long", "lat"))
+
+
+mapStates = map("state", fill = TRUE, plot = FALSE)
+leaflet(data = county.lines.sf) %>% addTiles()
+  #addProviderTiles(providers$SThunderforest.SpinalMap) %>%
+  addPolygons(fillColor = topo.colors(10, alpha = NULL), stroke = FALSE)
+```
+
+
+```{r}
 #3. Filter the homes down to those that are within one mile of an affordable housing development.
 # 1 mile = 1609 m
 property_within_1mile <- subset(property_details, NNDist<1609)
@@ -169,12 +188,103 @@ property_within_1mile <- subset(property_details, NNDist<1609)
 
 
 ```{r}
-#4. For each remaining home, calculate a new column called "group", which is defined according to the following rules. Hint: Use the `case_when` function to do this.  
-#	* "pre" - for homes where the distance is less than half a mile and whose sale date was 2-5 years prior to the input year  
+#4. For each remaining home, calculate a new column called "group", which is defined according to the following rules. Hint: Use the `case_when` function to do this. 
+
+#For this project, we'll be focusing on single family homes and look at affordable housing developments that were placed in service in 2000 or later.
+
+
+property_details <- merge(property_details, unique(st_drop_geometry(LIHTC)[c("HUD_ID","YR_PIS")]), by = "HUD_ID", all.x=T)
+
+property_details <- merge(property_details, unique(filtered_sales[c("apn","ownerdate")]), by = "apn", all.x=T)
+
+property_details <- merge(property_details, unique(assessments[c("apn","class")]), by = "apn", all.x=T)
+
+#unique(assessments[c("class","classdesc")])
+
+#	* "pre" - for homes where the distance is less than half a mile and whose sale date was 2-5 years prior to the input year (YR_PIS in LIHTC) 
+
 #	* "mid" - for homes where the distance is less than half a mile and whose sale date was 0-2 years prior to the input year  
+
 #	* "post" - for homes where the distance is less than half a mile and whose sale date was after the input year  
+
 #	* "outside" - for homes where the distance is more than half a mile and whose sale date was no more than 5 years prior to the input year  
+
 #	* "other" - All other rows  
+
+library(lubridate)
+property_details = property_details %>%
+  filter(YR_PIS>=2000 & class == "R" & !YR_PIS %in% c(8888,9999)) %>%
+  mutate(group = case_when(
+    NNDist < 804.5 & (YR_PIS - year(ownerdate)) %in% 2:5 ~ "pre",
+    NNDist < 804.5 & (YR_PIS - year(ownerdate)) %in% 0:1 ~ "mid",
+    NNDist < 804.5 & (YR_PIS - year(ownerdate)) < 0 ~ "post",
+    NNDist > 804.5 & (YR_PIS - year(ownerdate)) <= 5 ~ "outside",
+    TRUE ~ "other"
+  ))
+
+#check
+sort(unique(property_details$YR_PIS))
+unique(property_details$class)
+property_details %>%
+  group_by(group) %>%
+  summarize(maxdist = max(NNDist), maxyear_diff=max(YR_PIS - year(ownerdate)), minyear_diff=min(YR_PIS - year(ownerdate)))
+
 ```
+
+```{r}
+#5. Filter out all rows whose group is "other".
+
+property_details_filtered = property_details %>%
+  filter(YR_PIS>=2000 & class == "R" & !YR_PIS %in% c(8888,9999)) %>%
+  mutate(group = case_when(
+    NNDist < 804.5 & (YR_PIS - year(ownerdate)) %in% 2:5 ~ "pre",
+    NNDist < 804.5 & (YR_PIS - year(ownerdate)) %in% 0:1 ~ "mid",
+    NNDist < 804.5 & (YR_PIS - year(ownerdate)) < 0 ~ "post",
+    NNDist > 804.5 & (YR_PIS - year(ownerdate)) <= 5 ~ "outside",
+    TRUE ~ "other"
+  )) %>%
+  filter(group != "other")
+```
+
+```{r}
+#6. Add an id column containing the id value for the development. (HUD_ID from LIHTC?)
+# Already did this in Q2 
+
+```
+
+```{r}
+#7. Create a column "Tpost" that, for homes in the "post" group gives the number of years that the sale occurred after the housing development was placed in service.
+
+property_details_filtered$Tpost <- 
+  ifelse(property_details_filtered$group == "post", 
+         year(property_details_filtered$ownerdate) - property_details_filtered$YR_PIS,
+         NA)
+
+#check
+property_details_filtered %>%
+  group_by(group) %>%
+  summarize(meanTpost = mean(Tpost, na.rm=T))
+
+```
+
+```{r}
+#8. Create a column named "age" which gives the age of the home at the time of sale.
+#9. Filter down to only sales that took place within the five years before or after the associated development was placed in service. Then build a linear model with target variable the sales amount using the following features:
+	- square_footage
+	- age of home at time of sale
+	- group
+	- year
+	- tract
+How can you interpret the coefficients of this model?
+#10. Now, try a model with target being the log of the sale price.
+	- square_footage
+	- age of home at time of sale
+	- group
+	- year
+	- tract
+How can you interpret the coefficients of this model?
+#11. Continue to explore the data to see if you can improve the models you have.
+```
+
 
 
