@@ -7,29 +7,31 @@ output: html_notebook
 library(tidyverse)
 library(dplyr)
 library(ggplot2)
-```
-
-```{r}
-sales <- read.csv(file = 'data/filtered_sales_R_project.csv')
-sales %>%
-  arrange(apn, amount, ownerdate)
-
-```
-```{r}
-sales_mean <- mean(sales$amount)
-sales_mean
-
+library(data.table)
+install.packages('sf')
+library(sf)
 ```
 
 
 ```{r}
-aff_housing_002 <- read_csv(file= 'data/affordable_housing_002.csv')
-aff_housing_002
+lihtc <- read_csv(file = 'data/LIHTC.csv')
 
- 
+lihtc
+```
+```{r}
+lihtc_geom <- data.frame(feature = 1:177, X = rnorm(177), Y = rnorm(177)) %>%
+  st_as_sf(coords = c('X', 'Y'))
+
+lihtc_geom
+
 ```
 
 
 
+```{r}
+cbind(lihtc, lihtc_geom)
+
+
+```
 
 
