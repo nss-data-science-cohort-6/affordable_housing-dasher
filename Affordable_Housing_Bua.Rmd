@@ -196,11 +196,11 @@ property_within_1mile <- subset(property_details, NNDist<1609)
 #For this project, we'll be focusing on single family homes and look at affordable housing developments that were placed in service in 2000 or later.
 
 
-property_details <- merge(property_details, unique(st_drop_geometry(LIHTC)[c("HUD_ID","YR_PIS")]), by = "HUD_ID", all.x=T)
+property_details_merge <- merge(property_details, unique(st_drop_geometry(LIHTC)[c("HUD_ID","YR_PIS")]), by = "HUD_ID", all.x=T)
 
-property_details <- merge(property_details, unique(filtered_sales[c("apn","ownerdate")]), by = "apn", all.x=T)
+property_details_merge <- merge(property_details_merge, unique(filtered_sales[c("apn","ownerdate","amount")]), by = "apn", all.x=T)
 
-property_details <- merge(property_details, unique(assessments[c("apn","class")]), by = "apn", all.x=T)
+property_details_merge <- merge(property_details_merge, unique(assessments[c("apn","class")]), by = "apn", all.x=T)
 
 #unique(assessments[c("class","classdesc")])
 
@@ -215,7 +215,7 @@ property_details <- merge(property_details, unique(assessments[c("apn","class")]
 #	* "other" - All other rows  
 
 library(lubridate)
-property_details = property_details %>%
+property_details_merge = property_details_merge %>%
   filter(YR_PIS>=2000 & class == "R" & !YR_PIS %in% c(8888,9999)) %>%
   mutate(group = case_when(
     NNDist < 804.5 & (YR_PIS - year(ownerdate)) %in% 2:5 ~ "pre",
@@ -226,9 +226,9 @@ property_details = property_details %>%
   ))
 
 #check
-sort(unique(property_details$YR_PIS))
-unique(property_details$class)
-property_details %>%
+sort(unique(property_details_merge$YR_PIS))
+unique(property_details_merge$class)
+property_details_merge %>%
   group_by(group) %>%
   summarize(maxdist = max(NNDist), maxyear_diff=max(YR_PIS - year(ownerdate)), minyear_diff=min(YR_PIS - year(ownerdate)))
 
@@ -237,7 +237,7 @@ property_details %>%
 ```{r}
 #5. Filter out all rows whose group is "other".
 
-property_details_filtered = property_details %>%
+property_details_filtered = property_details_merge %>%
   filter(YR_PIS>=2000 & class == "R" & !YR_PIS %in% c(8888,9999)) %>%
   mutate(group = case_when(
     NNDist < 804.5 & (YR_PIS - year(ownerdate)) %in% 2:5 ~ "pre",
@@ -266,32 +266,65 @@ property_details_filtered$Tpost <-
 #check
 property_details_filtered %>%
   group_by(group) %>%
-  summarize(meanTpost = mean(Tpost, na.rm=T), minTpost = min(Tpost, na.rm=T))
+  summarize(meanTpost = mean(Tpost, na.rm=T), minTpost = min(Tpost, na.rm=T), maxTpost = max(Tpost, na.rm=T))
 
 ```
 ```{r}
 #8. Create a column named "age" which gives the age of the home at the time of sale.
-property_details_filtered$age <- as.numeric(year(property_details_filtered$ownerdate) - year_built)
+property_details_filtered$age <- as.numeric(year(property_details_filtered$ownerdate) - property_details_filtered$year_built)
+
+#check
+summary(property_details_filtered$age)
+property_details_filtered %>%
+  select(apn, year_built, ownerdate, age) %>%
+  head(10)
+
 ```
 
 ```{r}
-#9. Filter down to only sales that took place within the five years before or after the associated development was placed in service. Then build a linear model with target variable the sales amount using the following features:
-	- square_footage
-	- age of home at time of sale
-	- group
-	- year
-	- tract
-How can you interpret the coefficients of this model?
-  
+# 9. Filter down to only sales that took place within the five years before or after the associated development was placed in service. 
+
+property_details_filtered_within5yr <- property_details_filtered %>%
+  subset((YR_PIS - as.numeric(year(ownerdate))) %in% -5:5)
+
+#check
+summary(property_details_filtered_within5yr$YR_PIS - year(property_details_filtered_within5yr$ownerdate))
+
+#Then build a linear model with target variable the sales amount using the following features:
+# 	- square_footage (num)
+# 	- age of home at time of sale (num)
+# 	- group (factor)
+# 	- year (num)
+# 	- tract (factor)
+# How can you interpret the coefficients of this model?
+
+
+colnames(property_details_filtered_within5yr)
+
+linear_model <- lm(amount ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract)-1, data = property_details_filtered_within5yr)
+summary(linear_model)
+
+```
+
+
+```{r}
 #10. Now, try a model with target being the log of the sale price.
-	- square_footage
-	- age of home at time of sale
-	- group
-	- year
-	- tract
-How can you interpret the coefficients of this model?
+# 	- square_footage
+# 	- age of home at time of sale
+# 	- group
+# 	- year
+# 	- tract
+# How can you interpret the coefficients of this model?
+#   
+log_linear_model <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract)-1, data = property_details_filtered_within5yr)
+summary(log_linear_model)
   
 #11. Continue to explore the data to see if you can improve the models you have.
+
+#add NNDist to model, maybe NNDist can replace tract
+#add crime variable to dataset
+
+#
 ```
 
 
