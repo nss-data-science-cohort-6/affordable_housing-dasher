@@ -125,22 +125,6 @@ property_details$HUD_ID <- LIHTC$HUD_ID[st_nearest_feature(property_details, LIH
 nearest_development <- LIHTC[st_nearest_feature(property_details, LIHTC), ]
 property_details$NNDist <- as.numeric(st_distance(property_details, nearest_development, by_element = T))
 
-
-#lapply outputs a list, we add do.call('c' to output a vector
-
-prop_distances <- do.call('c',lapply(1:nrow(property_details),function(i){
-  #i=1 for testing
-  print(paste(i,nrow(property_details),sep='/')) 
-  curr.prop <- property_details[i,]
-  curr.lihtc <- subset(LIHTC,HUD_ID==curr.prop$HUD_ID)
-  curr.dist <- st_distance(curr.prop,curr.lihtc)
-  return(as.numeric(curr.dist))
-  }))
-
-save(prop_distances,file='/Users/thidathornvanitsthian/Documents/Data Science 2022/affordable_housing-dasher/Data/prop_distances.Rdata')
-
-#load('/Users/thidathornvanitsthian/Documents/Data Science 2022/affordable_housing-dasher/Data/prop_distances.Rdata')
-
 library(maps)
 #subset of lat long around Davidson County from map_data 
 county.lines <- subset(map_data('county'),region=='tennessee' & subregion=='davidson') 
@@ -159,22 +143,41 @@ ggplot(property_details)+
 #this splits the rainbow into 100 colours, we only want 75 of the 100 rainbow colours but in reverse order [75:1]
 
 #distances are small in the center 
-
-
 ```
 
 ```{r}
-#my attempt to create an interactive map on leaflet
+#Create an interactive map using leaflet
+
 library(leaflet)
-library(raster)
 
-county.lines.sf <- st_as_sf(county.lines, coords = c("long", "lat"))
+#Read in shapefile for Davidson County Boarder
+boarder_shapefile <- st_read("Data/Davidson County Border (GIS)/geo_export_bb5b211c-8776-4c69-b6b8-a10ee043fd18.shp", as_tibble = T, quiet = T) %>%
+  st_transform('+proj=longlat +datum=WGS84')
 
+map <- leaflet(options = leafletOptions(minZoom = 10)) %>%
+  addProviderTiles(provider = "CartoDB.Voyager") %>%
+  setView(lng = -86.7816, lat = 36.1627, zoom = 12) %>%
+  setMaxBounds(lng1 = -86.7816 + 1, 
+               lat1 = 36.1627 + 1, 
+               lng2 = -86.7816 - 1, 
+               lat2 = 36.1627 - 1) %>%
+  addCircleMarkers(data = LIHTC,
+                   radius = 5,
+                   color = "white",
+                   weight = 1,
+                   fillColor = "red",
+                   fillOpacity = 0.75) %>%
+  addMarkers(data = property_details,
+                   # radius = 5,
+                   # color = "white",
+                   # weight = 1,
+                   # fillColor = "blue",
+                   # fillOpacity = 0.75,
+                   clusterOptions = markerClusterOptions()) %>%
+  addPolylines(data = boarder_shapefile)
 
-mapStates = map("state", fill = TRUE, plot = FALSE)
-leaflet(data = county.lines.sf) %>% addTiles()
-  #addProviderTiles(providers$SThunderforest.SpinalMap) %>%
-  addPolygons(fillColor = topo.colors(10, alpha = NULL), stroke = FALSE)
+map
+
 ```
 
 
@@ -263,12 +266,15 @@ property_details_filtered$Tpost <-
 #check
 property_details_filtered %>%
   group_by(group) %>%
-  summarize(meanTpost = mean(Tpost, na.rm=T))
+  summarize(meanTpost = mean(Tpost, na.rm=T), minTpost = min(Tpost, na.rm=T))
 
+```
+```{r}
+#8. Create a column named "age" which gives the age of the home at the time of sale.
+property_details_filtered$age <- as.numeric(year(property_details_filtered$ownerdate) - year_built)
 ```
 
 ```{r}
-#8. Create a column named "age" which gives the age of the home at the time of sale.
 #9. Filter down to only sales that took place within the five years before or after the associated development was placed in service. Then build a linear model with target variable the sales amount using the following features:
 	- square_footage
 	- age of home at time of sale
@@ -276,6 +282,7 @@ property_details_filtered %>%
 	- year
 	- tract
 How can you interpret the coefficients of this model?
+  
 #10. Now, try a model with target being the log of the sale price.
 	- square_footage
 	- age of home at time of sale
@@ -283,6 +290,7 @@ How can you interpret the coefficients of this model?
 	- year
 	- tract
 How can you interpret the coefficients of this model?
+  
 #11. Continue to explore the data to see if you can improve the models you have.
 ```
 
