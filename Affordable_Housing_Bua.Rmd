@@ -14,8 +14,28 @@ library(tidyverse)
 filtered_sales <- read_csv("filtered_sales.csv") 
 assessments <- read_csv("assessments.csv")
 LIHTC <- read_csv("LIHTC.csv")
+LIHTC_filtered <- subset(LIHTC, YR_PIS >= 2000 & !YR_PIS %in% c(8888,9999))
+
 property_details <- read_csv("property_details.csv")
+
 barnes <- read_csv("barnes.csv")
+barnes$HUD_ID <- c('TNA081023A00400CO',
+	        'TNA09211010400',
+            'TNA081023A90000CO',
+            'TNA08600035500',
+            'TNA10613000800',
+            'TNA05108017800',
+            'TNA09311022700',
+            'TNA06912006600',
+            'TNA10601016800')
+barnes = barnes %>% rename(YS_PIS = `Barnes Year`, 
+                           PROJ_ADD = `Street Address`, 
+                           PROJ_CTY = City, 
+                           PROJ_ZIP = `Zip Code`) %>%
+                    select(YS_PIS,PROJ_ADD,PROJ_CTY,PROJ_ZIP,geometry, HUD_ID)
+
+LIHTC_filtered <- bind_rows(LIHTC_filtered, barnes)
+
 X2021_Active_Property_List <- read_excel("2021_Active_Property_List.xlsx")
 
 #filtered_sales, assessments, property_details can join on 'apn'
@@ -102,17 +122,17 @@ property_details$Latitude <- str_sub(property_details$Latitude, 1, -2)
 library(sf)
 
 #Generate 'geometry' column in LIHTC and property_details
-LIHTC <- st_as_sf(LIHTC, coords = c("LONGITUDE", "LATITUDE"), 
+LIHTC_filtered <- st_as_sf(LIHTC_filtered, coords = c("LONGITUDE", "LATITUDE"), 
                  crs = 4326, agr = "constant")
 
 property_details <- st_as_sf(property_details, coords = c("Longitude", "Latitude"), 
                  crs = 4326, agr = "constant")
 
 #The following code returns: for each feature (geometry) in property_details the index of the nearest feature (geometry) in set LIHTC
-try(st_nearest_feature(property_details, LIHTC))
+try(st_nearest_feature(property_details, LIHTC_filtered))
 
 #Add HUD_ID column to property_details
-property_details$HUD_ID <- LIHTC$HUD_ID[st_nearest_feature(property_details, LIHTC)]
+property_details$HUD_ID <- LIHTC_filtered$HUD_ID[st_nearest_feature(property_details, LIHTC_filtered)]
 
 ```
 
@@ -122,7 +142,7 @@ property_details$HUD_ID <- LIHTC$HUD_ID[st_nearest_feature(property_details, LIH
 # test prop_distance <- st_distance(property_details[1:10,], LIHTC)
 
 #Rohit code from Slack
-nearest_development <- LIHTC[st_nearest_feature(property_details, LIHTC), ]
+nearest_development <- LIHTC_filtered[st_nearest_feature(property_details, LIHTC_filtered), ]
 property_details$NNDist <- as.numeric(st_distance(property_details, nearest_development, by_element = T))
 
 library(maps)
@@ -133,7 +153,7 @@ county.lines <- subset(map_data('county'),region=='tennessee' & subregion=='davi
 
 ggplot(property_details)+
   geom_sf(aes(colour=NNDist))+
-  geom_sf(data = LIHTC, shape=23) +
+  geom_sf(data = LIHTC_filtered, shape=23) +
   geom_path(data = county.lines, mapping=aes(x=long, y=lat, group=group)) +
   scale_colour_gradientn(colours=rainbow(100)[75:1]) 
   
@@ -161,7 +181,7 @@ map <- leaflet(options = leafletOptions(minZoom = 10)) %>%
                lat1 = 36.1627 + 1, 
                lng2 = -86.7816 - 1, 
                lat2 = 36.1627 - 1) %>%
-  addCircleMarkers(data = LIHTC,
+  addCircleMarkers(data = LIHTC_filtered,
                    radius = 5,
                    color = "white",
                    weight = 1,
@@ -186,7 +206,9 @@ map
 # 1 mile = 1609 m
 property_within_1mile <- subset(property_details, NNDist<1609)
 
-#69705 observations are within a mile of the nearest affordable housing developments
+#filter out YR_PIS >= 2000 in LIHTC first before calculating NNDist
+
+#54760 observations are within a mile of the nearest affordable housing developments
 ```
 
 
@@ -196,11 +218,10 @@ property_within_1mile <- subset(property_details, NNDist<1609)
 #For this project, we'll be focusing on single family homes and look at affordable housing developments that were placed in service in 2000 or later.
 
 
-property_details_merge <- merge(property_details, unique(st_drop_geometry(LIHTC)[c("HUD_ID","YR_PIS")]), by = "HUD_ID", all.x=T)
+property_details_merge <- merge(property_details, unique(st_drop_geometry(LIHTC_filtered)[c("HUD_ID","YR_PIS")]), by = "HUD_ID", all.x=T)
 
 property_details_merge <- merge(property_details_merge, unique(filtered_sales[c("apn","ownerdate","amount")]), by = "apn", all.x=T)
 
-property_details_merge <- merge(property_details_merge, unique(assessments[c("apn","class")]), by = "apn", all.x=T)
 
 #unique(assessments[c("class","classdesc")])
 
@@ -216,7 +237,7 @@ property_details_merge <- merge(property_details_merge, unique(assessments[c("ap
 
 library(lubridate)
 property_details_merge = property_details_merge %>%
-  filter(YR_PIS>=2000 & class == "R" & !YR_PIS %in% c(8888,9999)) %>%
+  #filter(YR_PIS>=2000 & class == "R" & !YR_PIS %in% c(8888,9999)) %>%
   mutate(group = case_when(
     NNDist < 804.5 & (YR_PIS - year(ownerdate)) %in% 2:5 ~ "pre",
     NNDist < 804.5 & (YR_PIS - year(ownerdate)) %in% 0:1 ~ "mid",
@@ -227,7 +248,7 @@ property_details_merge = property_details_merge %>%
 
 #check
 sort(unique(property_details_merge$YR_PIS))
-unique(property_details_merge$class)
+
 property_details_merge %>%
   group_by(group) %>%
   summarize(maxdist = max(NNDist), maxyear_diff=max(YR_PIS - year(ownerdate)), minyear_diff=min(YR_PIS - year(ownerdate)))
@@ -238,7 +259,6 @@ property_details_merge %>%
 #5. Filter out all rows whose group is "other".
 
 property_details_filtered = property_details_merge %>%
-  filter(YR_PIS>=2000 & class == "R" & !YR_PIS %in% c(8888,9999)) %>%
   mutate(group = case_when(
     NNDist < 804.5 & (YR_PIS - year(ownerdate)) %in% 2:5 ~ "pre",
     NNDist < 804.5 & (YR_PIS - year(ownerdate)) %in% 0:1 ~ "mid",
@@ -247,6 +267,9 @@ property_details_filtered = property_details_merge %>%
     TRUE ~ "other"
   )) %>%
   filter(group != "other")
+
+#check
+sort(unique(property_details_filtered$group))
 ```
 
 ```{r}
@@ -269,15 +292,20 @@ property_details_filtered %>%
   summarize(meanTpost = mean(Tpost, na.rm=T), minTpost = min(Tpost, na.rm=T), maxTpost = max(Tpost, na.rm=T))
 
 ```
+
+
 ```{r}
 #8. Create a column named "age" which gives the age of the home at the time of sale.
 property_details_filtered$age <- as.numeric(year(property_details_filtered$ownerdate) - property_details_filtered$year_built)
+
 
 #check
 summary(property_details_filtered$age)
 property_details_filtered %>%
   select(apn, year_built, ownerdate, age) %>%
   head(10)
+
+#How can a home be sold before it was built? Perhaps it was the property before the current house was built
 
 ```
 
@@ -304,6 +332,7 @@ colnames(property_details_filtered_within5yr)
 linear_model <- lm(amount ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract)-1, data = property_details_filtered_within5yr)
 summary(linear_model)
 
+#-1 in factor(tract)-1 removes the global intercept
 ```
 
 
@@ -318,13 +347,30 @@ summary(linear_model)
 #   
 log_linear_model <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract)-1, data = property_details_filtered_within5yr)
 summary(log_linear_model)
-  
+```
+
+```{r}
+log_linear_model_notract <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group)-1 , data = property_details_filtered_within5yr)
+summary(log_linear_model_notract)
+```
+
+```{r}
+log_linear_model_NNDist <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group)-1 + NNDist, data = property_details_filtered_within5yr)
+summary(log_linear_model_NNDist)
+```
+
+
+
+
+```{r}
 #11. Continue to explore the data to see if you can improve the models you have.
 
+#add crime count per tract per year. data = Nashville Metro Police
 #add NNDist to model, maybe NNDist can replace tract
-#add crime variable to dataset
+#add crime variable (think about type of crimes) to dataset
 
-#
+#Other variables to consider
+#unemployment rate, Housing Price Index, Interest Rates, Economic Indicators, Income, Population
 ```
 
 
