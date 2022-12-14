@@ -1,6 +1,7 @@
 ---
 title: "Assessing the Impact of Affordable Housing Development"
 output: html_notebook
+
 ---
 
 
@@ -8,6 +9,7 @@ output: html_notebook
 library(readr)
 library(readxl)
 library(tidyverse)
+library(flexdashboard)
 ```
 
 ```{r}
@@ -36,9 +38,6 @@ barnes = barnes %>% rename(YS_PIS = `Barnes Year`,
 
 LIHTC_filtered <- bind_rows(LIHTC_filtered, barnes)
 
-X2021_Active_Property_List <- read_excel("2021_Active_Property_List.xlsx")
-
-#filtered_sales, assessments, property_details can join on 'apn'
 ```
 
 ```{r}
@@ -109,11 +108,9 @@ filtered_sales %>%
 
 ```
 
-
+1. Using the sf library, find the closest development to each home. Hint: You can convert a tibble to an sf (simple feature) object using the [`st_as_sf` function](https://r-spatial.github.io/sf/reference/st_as_sf.html). See, for example, this stackoverflow post: https://gis.stackexchange.com/questions/222978/lon-lat-to-simple-features-sfg-and-sfc-in-r. Once converted, you can use the [`get_nearest_feature` function](https://r-spatial.github.io/sf/reference/st_nearest_feature.html).
 
 ```{r}
-# 1. Using the sf library, find the closest development to each home. Hint: You can convert a tibble to an sf (simple feature) object using the [`st_as_sf` function](https://r-spatial.github.io/sf/reference/st_as_sf.html). See, for example, this stackoverflow post: https://gis.stackexchange.com/questions/222978/lon-lat-to-simple-features-sfg-and-sfc-in-r. Once converted, you can use the [`get_nearest_feature` function](https://r-spatial.github.io/sf/reference/st_nearest_feature.html).
-
 library(stringr)
 property_details[c('Longitude', 'Latitude')] <- str_split_fixed(property_details$centroid, ',', 2)
 property_details$Longitude <- str_sub(property_details$Longitude, 2, -1)
@@ -128,19 +125,15 @@ LIHTC_filtered <- st_as_sf(LIHTC_filtered, coords = c("LONGITUDE", "LATITUDE"),
 property_details <- st_as_sf(property_details, coords = c("Longitude", "Latitude"), 
                  crs = 4326, agr = "constant")
 
-#The following code returns: for each feature (geometry) in property_details the index of the nearest feature (geometry) in set LIHTC
-try(st_nearest_feature(property_details, LIHTC_filtered))
 
 #Add HUD_ID column to property_details
 property_details$HUD_ID <- LIHTC_filtered$HUD_ID[st_nearest_feature(property_details, LIHTC_filtered)]
 
 ```
 
+2. Calculate the distance from each home its closest development. 
 
 ```{r}
-#2. Calculate the distance from each home its closest development.
-# test prop_distance <- st_distance(property_details[1:10,], LIHTC)
-
 #Rohit code from Slack
 nearest_development <- LIHTC_filtered[st_nearest_feature(property_details, LIHTC_filtered), ]
 property_details$NNDist <- as.numeric(st_distance(property_details, nearest_development, by_element = T))
@@ -160,14 +153,12 @@ ggplot(property_details)+
 # group=group name of a column in county.lines
 # affordable housing developments (diamiond shapes) are right on the purple color
 # ?pch
-#this splits the rainbow into 100 colours, we only want 75 of the 100 rainbow colours but in reverse order [75:1]
-
-#distances are small in the center 
+# this splits the rainbow into 100 colours, we only want 75 of the 100 rainbow colours but in reverse order [75:1]
+# distances are small in the center 
 ```
+Create an interactive map using leaflet
 
 ```{r}
-#Create an interactive map using leaflet
-
 library(leaflet)
 
 #Read in shapefile for Davidson County Boarder
@@ -200,40 +191,32 @@ map
 
 ```
 
+3. Filter the homes down to those that are within one mile of an affordable housing development. (1 mile = 1609 m)
 
 ```{r}
-#3. Filter the homes down to those that are within one mile of an affordable housing development.
-# 1 mile = 1609 m
 property_within_1mile <- subset(property_details, NNDist<1609)
-
-#filter out YR_PIS >= 2000 in LIHTC first before calculating NNDist
 
 #54760 observations are within a mile of the nearest affordable housing developments
 ```
 
+4. For each remaining home, calculate a new column called "group", which is defined according to the following rules. Hint: Use the `case_when` function to do this. 
+
+* "pre" - for homes where the distance is less than half a mile and whose sale date was 2-5 years prior to the input year (YR_PIS in LIHTC) 
+
+* "mid" - for homes where the distance is less than half a mile and whose sale date was 0-2 years prior to the input year  
+
+* "post" - for homes where the distance is less than half a mile and whose sale date was after the input year  
+
+* "outside" - for homes where the distance is more than half a mile and whose sale date was no more than 5 years prior to the input year  
+
+* "other" - All other rows 
+
+For this project, we'll be focusing on single family homes and look at affordable housing developments that were placed in service in 2000 or later.
 
 ```{r}
-#4. For each remaining home, calculate a new column called "group", which is defined according to the following rules. Hint: Use the `case_when` function to do this. 
-
-#For this project, we'll be focusing on single family homes and look at affordable housing developments that were placed in service in 2000 or later.
-
-
 property_details_merge <- merge(property_details, unique(st_drop_geometry(LIHTC_filtered)[c("HUD_ID","YR_PIS")]), by = "HUD_ID", all.x=T)
 
 property_details_merge <- merge(property_details_merge, unique(filtered_sales[c("apn","ownerdate","amount")]), by = "apn", all.x=T)
-
-
-#unique(assessments[c("class","classdesc")])
-
-#	* "pre" - for homes where the distance is less than half a mile and whose sale date was 2-5 years prior to the input year (YR_PIS in LIHTC) 
-
-#	* "mid" - for homes where the distance is less than half a mile and whose sale date was 0-2 years prior to the input year  
-
-#	* "post" - for homes where the distance is less than half a mile and whose sale date was after the input year  
-
-#	* "outside" - for homes where the distance is more than half a mile and whose sale date was no more than 5 years prior to the input year  
-
-#	* "other" - All other rows  
 
 library(lubridate)
 property_details_merge = property_details_merge %>%
@@ -255,9 +238,10 @@ property_details_merge %>%
 
 ```
 
-```{r}
-#5. Filter out all rows whose group is "other".
 
+5. Filter out all rows whose group is "other".
+
+```{r}
 property_details_filtered = property_details_merge %>%
   mutate(group = case_when(
     NNDist < 804.5 & (YR_PIS - year(ownerdate)) %in% 2:5 ~ "pre",
@@ -272,15 +256,18 @@ property_details_filtered = property_details_merge %>%
 sort(unique(property_details_filtered$group))
 ```
 
+6. Add an id column containing the id value for the development. (HUD_ID from LIHTC?)
+
 ```{r}
-#6. Add an id column containing the id value for the development. (HUD_ID from LIHTC?)
+
 # Already did this in Q2 
 
 ```
 
-```{r}
-#7. Create a column "Tpost" that, for homes in the "post" group gives the number of years that the sale occurred after the housing development was placed in service.
 
+7. Create a column "Tpost" that, for homes in the "post" group gives the number of years that the sale occurred after the housing development was placed in service.
+
+```{r}
 property_details_filtered$Tpost <- 
   ifelse(property_details_filtered$group == "post", 
          year(property_details_filtered$ownerdate) - property_details_filtered$YR_PIS,
@@ -293,11 +280,10 @@ property_details_filtered %>%
 
 ```
 
+8. Create a column named "age" which gives the age of the home at the time of sale.
 
 ```{r}
-#8. Create a column named "age" which gives the age of the home at the time of sale.
 property_details_filtered$age <- as.numeric(year(property_details_filtered$ownerdate) - property_details_filtered$year_built)
-
 
 #check
 summary(property_details_filtered$age)
@@ -305,73 +291,72 @@ property_details_filtered %>%
   select(apn, year_built, ownerdate, age) %>%
   head(10)
 
-#How can a home be sold before it was built? Perhaps it was the property before the current house was built
-
+# Negative age: How can a home be sold before it was built? Perhaps it was the property before the current house was built
 ```
 
-```{r}
-# 9. Filter down to only sales that took place within the five years before or after the associated development was placed in service. 
+9. Filter down to only sales that took place within the five years before or after the associated development was placed in service. 
 
+Then build a linear model with target variable the sales amount using the following features: -->
+- square_footage (num) -->
+- age of home at time of sale (num) -->
+- group (factor) -->
+- year (num) -->
+- tract (factor) -->
+How can you interpret the coefficients of this model? -->
+
+```{r}
 property_details_filtered_within5yr <- property_details_filtered %>%
-  subset((YR_PIS - as.numeric(year(ownerdate))) %in% -5:5)
+  subset(((YR_PIS - as.numeric(year(ownerdate))) %in% -5:5) & age > 0)
 
 #check
 summary(property_details_filtered_within5yr$YR_PIS - year(property_details_filtered_within5yr$ownerdate))
 
-#Then build a linear model with target variable the sales amount using the following features:
-# 	- square_footage (num)
-# 	- age of home at time of sale (num)
-# 	- group (factor)
-# 	- year (num)
-# 	- tract (factor)
-# How can you interpret the coefficients of this model?
-
-
 colnames(property_details_filtered_within5yr)
 
-linear_model <- lm(amount ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract)-1, data = property_details_filtered_within5yr)
+linear_model <- lm(amount ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract), data = property_details_filtered_within5yr)
 summary(linear_model)
-
-#-1 in factor(tract)-1 removes the global intercept
 ```
 
+10. Now, try a model with target being the log of the sale price.
+ 	- square_footage
+ 	- age of home at time of sale
+ 	- group
+ 	- year
+ 	- tract
+ How can you interpret the coefficients of this model?
 
 ```{r}
-#10. Now, try a model with target being the log of the sale price.
-# 	- square_footage
-# 	- age of home at time of sale
-# 	- group
-# 	- year
-# 	- tract
-# How can you interpret the coefficients of this model?
-#   
-log_linear_model <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract)-1, data = property_details_filtered_within5yr)
+log_linear_model <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract), data = property_details_filtered_within5yr)
 summary(log_linear_model)
 ```
 
 ```{r}
-log_linear_model_notract <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group)-1 , data = property_details_filtered_within5yr)
+log_linear_model_notract <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) , data = property_details_filtered_within5yr)
 summary(log_linear_model_notract)
+anova(log_linear_model_notract, log_linear_model) #we need tract
 ```
 
 ```{r}
-log_linear_model_NNDist <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group)-1 + NNDist, data = property_details_filtered_within5yr)
+log_linear_model_NNDist <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract) + NNDist, data = property_details_filtered_within5yr)
 summary(log_linear_model_NNDist)
+anova(log_linear_model, log_linear_model_NNDist)
 ```
-
-
-
 
 ```{r}
-#11. Continue to explore the data to see if you can improve the models you have.
-
-#add crime count per tract per year. data = Nashville Metro Police
-#add NNDist to model, maybe NNDist can replace tract
-#add crime variable (think about type of crimes) to dataset
-
-#Other variables to consider
-#unemployment rate, Housing Price Index, Interest Rates, Economic Indicators, Income, Population
+log_linear_model_bdcnd <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract) + factor(building_condition), data = property_details_filtered_within5yr)
+summary(log_linear_model_bdcnd)
+anova(log_linear_model, log_linear_model_bdcnd)
 ```
+
+
+11. Continue to explore the data to see if you can improve the models you have.
+
+add crime count per tract per year. data = Nashville Metro Police
+add NNDist to model, maybe NNDist can replace tract
+add crime variable (think about type of crimes) to dataset
+
+Other variables to consider
+unemployment rate, Housing Price Index, Interest Rates, Economic Indicators, Income, Population
 
 
 
