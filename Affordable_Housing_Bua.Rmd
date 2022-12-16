@@ -13,6 +13,7 @@ library(flexdashboard)
 ```
 
 ```{r}
+setwd("/Users/thidathornvanitsthian/Documents/Data Science 2022/affordable_housing-dasher/Data")
 filtered_sales <- read_csv("filtered_sales.csv") 
 assessments <- read_csv("assessments.csv")
 LIHTC <- read_csv("LIHTC.csv")
@@ -21,6 +22,7 @@ LIHTC_filtered <- subset(LIHTC, YR_PIS >= 2000 & !YR_PIS %in% c(8888,9999))
 property_details <- read_csv("property_details.csv")
 
 barnes <- read_csv("barnes.csv")
+
 barnes$HUD_ID <- c('TNA081023A00400CO',
 	        'TNA09211010400',
             'TNA081023A90000CO',
@@ -33,11 +35,12 @@ barnes$HUD_ID <- c('TNA081023A00400CO',
 barnes = barnes %>% rename(YS_PIS = `Barnes Year`, 
                            PROJ_ADD = `Street Address`, 
                            PROJ_CTY = City, 
-                           PROJ_ZIP = `Zip Code`) %>%
-                    select(YS_PIS,PROJ_ADD,PROJ_CTY,PROJ_ZIP,geometry, HUD_ID)
+                           PROJ_ZIP = `Zip Code`,
+                           LATITUDE = lat,
+                           LONGITUDE = lng) %>%
+                    select(YS_PIS,PROJ_ADD,PROJ_CTY,PROJ_ZIP, HUD_ID, LATITUDE, LONGITUDE)
 
 LIHTC_filtered <- bind_rows(LIHTC_filtered, barnes)
-
 ```
 
 ```{r}
@@ -191,10 +194,10 @@ map
 
 ```
 
-3. Filter the homes down to those that are within one mile of an affordable housing development. (1 mile = 1609 m)
+3. Filter the homes down to those that are within one mile of an affordable housing development. (1 mile = 1609.34 m)
 
 ```{r}
-property_within_1mile <- subset(property_details, NNDist<1609)
+property_within_1mile <- subset(property_details, NNDist<1609.34)
 
 #54760 observations are within a mile of the nearest affordable housing developments
 ```
@@ -214,7 +217,7 @@ property_within_1mile <- subset(property_details, NNDist<1609)
 For this project, we'll be focusing on single family homes and look at affordable housing developments that were placed in service in 2000 or later.
 
 ```{r}
-property_details_merge <- merge(property_details, unique(st_drop_geometry(LIHTC_filtered)[c("HUD_ID","YR_PIS")]), by = "HUD_ID", all.x=T)
+property_details_merge <- merge(property_within_1mile, unique(st_drop_geometry(LIHTC_filtered)[c("HUD_ID","YR_PIS")]), by = "HUD_ID", all.x=T)
 
 property_details_merge <- merge(property_details_merge, unique(filtered_sales[c("apn","ownerdate","amount")]), by = "apn", all.x=T)
 
@@ -283,7 +286,8 @@ property_details_filtered %>%
 8. Create a column named "age" which gives the age of the home at the time of sale.
 
 ```{r}
-property_details_filtered$age <- as.numeric(year(property_details_filtered$ownerdate) - property_details_filtered$year_built)
+property_details_filtered$age <- as.numeric(year(property_details_filtered$ownerdate) 
+                                            - property_details_filtered$year_built)
 
 #check
 summary(property_details_filtered$age)
@@ -296,14 +300,6 @@ property_details_filtered %>%
 
 9. Filter down to only sales that took place within the five years before or after the associated development was placed in service. 
 
-Then build a linear model with target variable the sales amount using the following features: -->
-- square_footage (num) -->
-- age of home at time of sale (num) -->
-- group (factor) -->
-- year (num) -->
-- tract (factor) -->
-How can you interpret the coefficients of this model? -->
-
 ```{r}
 property_details_filtered_within5yr <- property_details_filtered %>%
   subset(((YR_PIS - as.numeric(year(ownerdate))) %in% -5:5) & age > 0)
@@ -312,7 +308,18 @@ property_details_filtered_within5yr <- property_details_filtered %>%
 summary(property_details_filtered_within5yr$YR_PIS - year(property_details_filtered_within5yr$ownerdate))
 
 colnames(property_details_filtered_within5yr)
+colSums(is.na(property_details_filtered_within5yr))
+```
 
+Then build a linear model with target variable the sales amount using the following features: 
+- square_footage (num) 
+- age of home at time of sale (num) 
+- group (factor) 
+- year (num) 
+- tract (factor) 
+How can you interpret the coefficients of this model? 
+
+```{r}
 linear_model <- lm(amount ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract), data = property_details_filtered_within5yr)
 summary(linear_model)
 ```
@@ -326,26 +333,39 @@ summary(linear_model)
  How can you interpret the coefficients of this model?
 
 ```{r}
-log_linear_model <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract), data = property_details_filtered_within5yr)
-summary(log_linear_model)
+log_model <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract), data = property_details_filtered_within5yr)
+summary(log_model)
 ```
 
 ```{r}
-log_linear_model_notract <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) , data = property_details_filtered_within5yr)
-summary(log_linear_model_notract)
-anova(log_linear_model_notract, log_linear_model) #we need tract
+log_model_notract <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) , data = property_details_filtered_within5yr)
+summary(log_model_notract)
+anova(log_model_notract, log_model) #we need tract
 ```
 
 ```{r}
-log_linear_model_NNDist <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract) + NNDist, data = property_details_filtered_within5yr)
-summary(log_linear_model_NNDist)
-anova(log_linear_model, log_linear_model_NNDist)
+log_model_NNDist <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract) + NNDist, data = property_details_filtered_within5yr)
+summary(log_model_NNDist)
+anova(log_model, log_model_NNDist)
 ```
 
+Log Model with Building Condition
+
 ```{r}
-log_linear_model_bdcnd <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract) + factor(building_condition), data = property_details_filtered_within5yr)
-summary(log_linear_model_bdcnd)
-anova(log_linear_model, log_linear_model_bdcnd)
+log_model_bdcnd <- lm(log(amount) ~ square_footage + age + year(ownerdate) + factor(group) + factor(tract) + factor(building_condition), data = property_details_filtered_within5yr)
+summary(log_model_bdcnd)
+anova(log_model, log_model_bdcnd)
+```
+
+Plot of Log Model with Building Condition
+
+```{r}
+log_model_bdcnd_df <- data.frame(actual = log(property_details_filtered_within5yr$amount), 
+                                        predicted = log_model_bdcnd$fitted.values)
+log_model_bdcnd_df %>%
+  ggplot() +
+  geom_hex(aes(x=actual, y=predicted), bins = 100) +
+  scale_fill_gradientn(colours = rainbow(100)[75:1])
 ```
 
 
